@@ -7,7 +7,13 @@ declare -A aliases=(
 )
 
 defaultDebianSuite='stretch'
-defaultAlpineVersion='3.7'
+defaultAlpineVersion='3.8'
+declare -A alpineVersion=(
+	# "openssl_missing.h:196:22: error: static declaration of 'EVP_PKEY_get0_RSA' follows non-static declaration" (and friends)
+	# https://github.com/docker-library/ruby/issues/228 / https://bugs.ruby-lang.org/issues/14754
+	[2.4]='3.7' # TODO remove this (and add Alpine 3.8) once 2.4.5+ is released
+	[2.5]='3.7' # TODO remove this (and add Alpine 3.8) once 2.5.2+ is released
+)
 
 self="$(basename "$BASH_SOURCE")"
 cd "$(dirname "$(readlink -f "$BASH_SOURCE")")"
@@ -73,8 +79,8 @@ join() {
 
 for version in "${versions[@]}"; do
 	for v in \
-		{stretch,jessie}{,/slim,/onbuild} \
-		alpine{3.7,3.6} \
+		{stretch,jessie}{,/slim} \
+		alpine{3.8,3.7,3.6} \
 	; do
 		dir="$version/$v"
 		variant="$(basename "$v")"
@@ -89,13 +95,7 @@ for version in "${versions[@]}"; do
 
 		commit="$(dirCommit "$dir")"
 
-		versionDockerfile="$dir/Dockerfile"
-		versionCommit="$commit"
-		if [ "$variant" = 'onbuild' ]; then
-			versionDockerfile="$(dirname "$dir")/Dockerfile"
-			versionCommit="$(dirCommit "$(dirname "$versionDockerfile")")"
-		fi
-		fullVersion="$(git show "$versionCommit":"$versionDockerfile" | awk '$1 == "ENV" && $2 == "RUBY_VERSION" { print $3; exit }')"
+		fullVersion="$(git show "$commit":"$dir/Dockerfile" | awk '$1 == "ENV" && $2 == "RUBY_VERSION" { print $3; exit }')"
 
 		versionAliases=(
 			$fullVersion
@@ -111,22 +111,14 @@ for version in "${versions[@]}"; do
 			*-"$defaultDebianSuite")
 				variantAliases+=( "${versionAliases[@]/%/-${variant%-$defaultDebianSuite}}" )
 				;;
-			"alpine${defaultAlpineVersion}")
+			"alpine${alpineVersion[$version]:-$defaultAlpineVersion}")
 				variantAliases+=( "${versionAliases[@]/%/-alpine}" )
 				;;
 		esac
 		variantAliases=( "${variantAliases[@]//latest-/}" )
 
-		case "$v" in
-			*/onbuild)
-				variantParent="$(awk 'toupper($1) == "FROM" { print $2 }' "$(dirname "$dir")/Dockerfile")"
-				variantArches="${parentRepoToArches[$variantParent]}"
-				;;
-			*)
-				variantParent="$(awk 'toupper($1) == "FROM" { print $2 }' "$dir/Dockerfile")"
-				variantArches="${parentRepoToArches[$variantParent]}"
-				;;
-		esac
+		variantParent="$(awk 'toupper($1) == "FROM" { print $2 }' "$dir/Dockerfile")"
+		variantArches="${parentRepoToArches[$variantParent]}"
 
 		echo
 		cat <<-EOE

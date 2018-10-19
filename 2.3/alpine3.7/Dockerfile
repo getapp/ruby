@@ -8,10 +8,10 @@ RUN mkdir -p /usr/local/etc \
 	} >> /usr/local/etc/gemrc
 
 ENV RUBY_MAJOR 2.3
-ENV RUBY_VERSION 2.3.7
-ENV RUBY_DOWNLOAD_SHA256 c61f8f2b9d3ffff5567e186421fa191f0d5e7c2b189b426bb84498825d548edb
+ENV RUBY_VERSION 2.3.8
+ENV RUBY_DOWNLOAD_SHA256 910f635d84fd0d81ac9bdee0731279e6026cb4cd1315bbbb5dfb22e09c5c1dfe
 ENV RUBYGEMS_VERSION 2.7.7
-ENV BUNDLER_VERSION 1.16.3
+ENV BUNDLER_VERSION 1.16.6
 
 # some of ruby's build scripts are written in ruby
 #   we purge system ruby later to make sure our final image uses what we just built
@@ -55,6 +55,14 @@ RUN set -ex \
 	\
 	&& cd /usr/src/ruby \
 	\
+# https://github.com/docker-library/ruby/issues/196
+# https://bugs.ruby-lang.org/issues/14387#note-13 (patch source)
+# https://bugs.ruby-lang.org/issues/14387#note-16 ("Therefore ncopa's patch looks good for me in general." -- only breaks glibc which doesn't matter here)
+	&& wget -O 'thread-stack-fix.patch' 'https://bugs.ruby-lang.org/attachments/download/7081/0001-thread_pthread.c-make-get_main_stack-portable-on-lin.patch' \
+	&& echo '3ab628a51d92fdf0d2b5835e93564857aea73e0c1de00313864a94a6255cb645 *thread-stack-fix.patch' | sha256sum -c - \
+	&& patch -p1 -i thread-stack-fix.patch \
+	&& rm thread-stack-fix.patch \
+	\
 # hack in "ENABLE_PATH_CHECK" disabling to suppress:
 #   warning: Insecure world writable dir
 	&& { \
@@ -81,15 +89,14 @@ RUN set -ex \
 			| sort -u \
 			| awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }' \
 	)" \
-	&& apk add --virtual .ruby-rundeps $runDeps \
+	&& apk add --no-network --virtual .ruby-rundeps $runDeps \
 		bzip2 \
 		ca-certificates \
 		libffi-dev \
-		libressl-dev \
 		procps \
 		yaml-dev \
 		zlib-dev \
-	&& apk del .ruby-builddeps \
+	&& apk del --no-network .ruby-builddeps \
 	&& cd / \
 	&& rm -r /usr/src/ruby \
 	\
